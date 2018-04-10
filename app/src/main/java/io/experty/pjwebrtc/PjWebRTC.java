@@ -1,18 +1,16 @@
 package io.experty.pjwebrtc;
 
 import android.text.TextUtils;
-import android.util.ArrayMap;
 import android.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.HashMap;
 import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.function.Consumer;
 
-/**
- * Created by m8 on 05/04/2018.
- */
 
 public class PjWebRTC {
 
@@ -28,12 +26,12 @@ public class PjWebRTC {
 
   public static int lastRequestId;
 
-  public static ArrayMap<Integer, ResultCallback<JSONObject>> waitingRequests;
+  public static HashMap<Integer, ResultCallback<JSONObject>> waitingRequests = new HashMap<>();
 
-  public static ArrayMap<Integer, UserMedia> userMedia;
-  public static ArrayMap<Integer, PeerConnection> peerConnection;
+  public static HashMap<Integer, UserMedia> userMedia = new HashMap<>();
+  public static HashMap<Integer, PeerConnection> peerConnection = new HashMap<>();
 
-  public static BlockingDeque<String> sendQueue;
+  public static BlockingDeque<String> sendQueue = new LinkedBlockingDeque<>();
 
   static {
     initialized = false;
@@ -76,13 +74,15 @@ public class PjWebRTC {
         }
         while(!finished) {
           try {
-            PjWebRTC.pushMessage(sendQueue.takeFirst());
+            String msg = sendQueue.takeFirst();
+            PjWebRTC.pushMessage(msg);
           } catch (InterruptedException e) {
             e.printStackTrace();
           }
         }
       }
     };
+    writerThread.start();
   }
 
 
@@ -132,7 +132,7 @@ public class PjWebRTC {
         @Override
         public void onResult(JSONObject result) {
           try {
-            int id = result.getInt("userMediaId");
+            int id = result.getInt("peerConnectionId");
             PeerConnection pc = new PeerConnection(id);
             peerConnection.put(id, pc);
             cb.onResult(pc);

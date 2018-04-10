@@ -1,6 +1,6 @@
 package io.experty.pjwebrtc;
 
 
-interface ResultCallback<T> {
+public interface ResultCallback<T> {
    void onResult(T result);
 }

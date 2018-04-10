@@ -171,12 +171,12 @@ namespace webrtc {
     });
   }
 
-  std::shared_ptr<promise::Promise<nlohmann::json>> PeerConnection::createAnswer(nlohmann::json offer) {
+  std::shared_ptr<promise::Promise<nlohmann::json>> PeerConnection::createAnswer() {
     if(mediaTransport.size() == 0) throw "zrob tu errora";
-    return iceCompletePromise->then<nlohmann::json>([this, offer](bool& v) {
-      return remoteIceCompletePromise->then<nlohmann::json>([this, offer](bool& v) {
+    return iceCompletePromise->then<nlohmann::json>([this](bool& v) {
+      return remoteIceCompletePromise->then<nlohmann::json>([this](bool& v) {
         startTransportIfPossible();
-        return promise::Promise<nlohmann::json>::resolved(doCreateAnswer(offer));
+        return promise::Promise<nlohmann::json>::resolved(doCreateAnswer(this->remoteDescription));
       });
     });
   }
@@ -264,6 +264,8 @@ namespace webrtc {
 
   nlohmann::json PeerConnection::doCreateAnswer(nlohmann::json offer) {
     pj_status_t status;
+
+    printf("CREATE ANSWER FOR OFFER %s\n", offer.dump(2).c_str());
 
     std::ostringstream oss;
     oss << offer["sdp"].get<std::string>();

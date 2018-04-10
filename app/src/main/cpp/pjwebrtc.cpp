@@ -7,6 +7,52 @@
 #include <json.hpp>
 #include <chrono>
 
+#include <android/log.h>
+
+#define TAG "NATIVE"
+
+#include <pthread.h>
+#include <unistd.h>
+
+static int pfd[2];
+static pthread_t loggingThread;
+
+static void *loggingFunction(void*) {
+  ssize_t readSize;
+  char buf[128];
+
+  while((readSize = read(pfd[0], buf, sizeof buf - 1)) > 0) {
+    if(buf[readSize - 1] == '\n') {
+      --readSize;
+    }
+
+    buf[readSize] = 0;  // add null-terminator
+
+    __android_log_write(ANDROID_LOG_DEBUG, TAG, buf); // Set any log level you want
+  }
+
+  return 0;
+}
+
+static int runLoggingThread() { // run this function to redirect your output to android log
+  setvbuf(stdout, 0, _IOLBF, 0); // make stdout line-buffered
+  setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
+
+  /* create the pipe and redirect stdout and stderr */
+  pipe(pfd);
+  dup2(pfd[1], 1);
+  dup2(pfd[1], 2);
+
+  /* spawn the logging thread */
+  if(pthread_create(&loggingThread, 0, loggingFunction, 0) == -1) {
+    return -1;
+  }
+
+  pthread_detach(loggingThread);
+
+  return 0;
+}
+
 moodycamel::ConcurrentQueue<std::string> messages;
 std::shared_ptr<webrtc::PeerConnection> peerConnection;
 
@@ -23,12 +69,16 @@ JNIEXPORT void JNICALL
 Java_io_experty_pjwebrtc_PjWebRTC_init(JNIEnv *env, jclass type) {
   webrtc::init();
   registerThisThread("jni_init");
+  runLoggingThread();
 }
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jstring json_) {
   registerThisThread("jni_push");
   const char *json = env->GetStringUTFChars(json_, 0);
+
+  __android_log_print(ANDROID_LOG_VERBOSE, TAG, "PM %s", json);
 
   auto message = nlohmann::json::parse(json);
   auto messageType = message["type"];
@@ -57,6 +107,9 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
   } else
   if(messageType == "setLocalDescription") {
     peerConnection->setLocalDescription(message["sdp"]);
+    nlohmann::json msg = { {"type", "localDescriptionSet"}, {"peerConnectionId", 0},
+                           {"responseId", message["requestId"]} };
+    messages.enqueue(msg.dump(2));
     for (auto &candidate : peerConnection->localCandidates) {
       nlohmann::json msg = { {"type", "iceCandidate"}, {"candidate", candidate},
                              {"peerConnectionId", 0} };
@@ -65,6 +118,9 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
   } else
   if(messageType == "setRemoteDescription") {
     peerConnection->setRemoteDescription(message["sdp"]);
+    nlohmann::json msg = { {"type", "remoteDescriptionSet"}, {"peerConnectionId", 0},
+                           {"responseId", message["requestId"]} };
+    messages.enqueue(msg.dump(2));
   } else
   if(messageType == "createOffer") {
     peerConnection->createOffer()->onResolved([=](nlohmann::json offer) {
@@ -74,20 +130,25 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
     });
   } else
   if(messageType == "createAnswer") {
-    peerConnection->createAnswer(message["sdp"])->onResolved([=](nlohmann::json offer) {
-      nlohmann::json msg = { {"type", "createdOffer"}, {"sdp", offer}, {"peerConnectionId", 0},
+    printf("CREATE ANSWER!!!!!!\n");
+    peerConnection->createAnswer()->onResolved([=](nlohmann::json answer) {
+      nlohmann::json msg = { {"type", "createdAnswer"}, {"sdp", answer}, {"peerConnectionId", 0},
                              {"responseId", message["requestId"]} };
       messages.enqueue(msg.dump(2));
     });
   } else {
     if(messageType == "addIceCandidate") {
       peerConnection->addIceCandidate(message["ice"]);
+      nlohmann::json msg = { {"type", "iceCandidateAdded"}, {"peerConnectionId", 0},
+                             {"responseId", message["requestId"]} };
+      messages.enqueue(msg.dump(2));
     }
   }
 
+  env->ReleaseStringUTFChars(json_, json);
+}
 
-env->ReleaseStringUTFChars(json_, json);
-}extern "C"
+extern "C"
 JNIEXPORT jstring JNICALL
 Java_io_experty_pjwebrtc_PjWebRTC_getNextMessage(JNIEnv *env, jobject instance, jlong wait) {
   registerThisThread("jni_read");

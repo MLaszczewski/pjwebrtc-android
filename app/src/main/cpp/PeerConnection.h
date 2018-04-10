@@ -84,7 +84,7 @@ namespace webrtc {
 
 
     std::shared_ptr<promise::Promise<nlohmann::json>> createOffer();
-    std::shared_ptr<promise::Promise<nlohmann::json>> createAnswer(nlohmann::json offer);
+    std::shared_ptr<promise::Promise<nlohmann::json>> createAnswer();
     void setLocalDescription(nlohmann::json sdp);
     void setRemoteDescription(nlohmann::json sdp);
 
