@@ -3,8 +3,6 @@
 //
 
 
-#include <pjnath/stun_auth.h>
-#include <pjmedia.h>
 #include "PeerConnection.h"
 
 namespace webrtc {

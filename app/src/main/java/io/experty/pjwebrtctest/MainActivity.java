@@ -178,7 +178,7 @@ public class MainActivity extends AppCompatActivity{
     });
 
     httpClient = new OkHttpClient();
-    Request request = new Request.Builder().url("ws://10.0.2.2:8338/").build();
+    Request request = new Request.Builder().url("ws://localhost:8338/").build();
     AppWebSocketListener listener = new AppWebSocketListener(this);
     webSocket = httpClient.newWebSocket(request, listener);
     httpClient.dispatcher().executorService().shutdown();
@@ -188,8 +188,13 @@ public class MainActivity extends AppCompatActivity{
     Log.d(TAG, "TRY ADD STREAM " + userMedia + " " + peerConnection);
     if(userMedia != null && peerConnection != null) {
       peerConnection.addStream(userMedia);
-      joinButton.setEnabled(true);
-      statusText.setText("waiting for connection...");
+      runOnUiThread(new Runnable() {
+        @Override
+        public void run() {
+          joinButton.setEnabled(true);
+          statusText.setText("waiting for connection...");
+        }
+      });
     }
   }
 

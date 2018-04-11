@@ -17,6 +17,10 @@ include_directories(
 
 set(PJ_LIB_SUFIX ${ABI}-unknown-linux-android.a)
 
+if(${ABI} STREQUAL "armeabi-v7a")
+  set(PJ_LIB_SUFIX "arm-unknown-linux-androideabi.a")
+endif()
+
 set(PJ_LIBS
 
     "${PJ_DIR}/pjnath/lib/libpjnath-${PJ_LIB_SUFIX}"
