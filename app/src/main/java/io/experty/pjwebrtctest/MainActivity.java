@@ -7,6 +7,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -157,7 +158,19 @@ public class MainActivity extends AppCompatActivity{
         tryAddStream();
       }
     });
-    PjWebRTC.createPeerConnection(new JSONObject(), new ResultCallback<PeerConnection>() {
+    JSONObject pcConfig = new JSONObject();
+    try {
+      pcConfig.put("iceServers", new JSONArray(
+          "[{\n" +
+              "  \"urls\":\"turn:turn.xaos.ninja:4433\",\n" +
+              "  \"username\":\"test\",\n" +
+              "  \"credential\":\"12345\"\n" +
+              "}]"
+      ));
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+    PjWebRTC.createPeerConnection(pcConfig, new ResultCallback<PeerConnection>() {
       @Override
       public void onResult(PeerConnection result) {
         peerConnection = result;
@@ -167,6 +180,7 @@ public class MainActivity extends AppCompatActivity{
             try {
               JSONObject msg = new JSONObject();
               msg.put("ice", result);
+              msg.put("uuid", clientUUID);
               webSocket.send(msg.toString(2));
             } catch (JSONException e) {
               e.printStackTrace();

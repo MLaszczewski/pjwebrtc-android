@@ -93,8 +93,9 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
   } else
   if(messageType == "createPeerConnection") {
     webrtc::PeerConnectionConfiguration pcConfig;
-    /// TODO: read pc config
-    peerConnection = std::make_shared<webrtc::PeerConnection>(pcConfig);
+    pcConfig.iceServers = message["config"]["iceServers"];
+    peerConnection = std::make_shared<webrtc::PeerConnection>();
+    peerConnection->init(pcConfig);
     nlohmann::json msg = { {"type", "createdPeerConnection"}, {"peerConnectionId", 0},
                            {"responseId", message["requestId"]} };
     messages.enqueue(msg.dump(2));
