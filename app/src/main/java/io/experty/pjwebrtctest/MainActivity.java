@@ -140,14 +140,32 @@ public class MainActivity extends AppCompatActivity{
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
 
-
+    final MainActivity activity = this;
     statusText = findViewById(R.id.status_text);
     joinButton = findViewById(R.id.join_button);
     joinButton.setEnabled(false);
     joinButton.setOnClickListener(new View.OnClickListener() {
       @Override
       public void onClick(View view) {
-
+        peerConnection.createOffer(new ResultCallback<JSONObject>() {
+          @Override
+          public void onResult(JSONObject result) {
+            final JSONObject offer = result;
+            peerConnection.setLocalDescription(result, new ResultCallback<Boolean>() {
+              @Override
+              public void onResult(Boolean result) {
+                try {
+                  JSONObject msg = new JSONObject();
+                  msg.put("sdp", offer);
+                  msg.put("uuid", activity.clientUUID);
+                  webSocket.send(msg.toString(2));
+                } catch (JSONException e) {
+                  e.printStackTrace();
+                }
+              }
+            });
+          }
+        });
       }
     });
 
