@@ -96,7 +96,6 @@ namespace webrtc {
     dtlsCompletePromise = nullptr;
 
     remoteIceCompletePromise = std::make_shared<promise::Promise<bool>>();
-
   }
 
   void PeerConnection::init(PeerConnectionConfiguration& configurationp) {
@@ -104,28 +103,9 @@ namespace webrtc {
 
     pj_status_t status;
     pool = pj_pool_create(&cachingPool.factory,"PeerConnection.pool", 4096, 4096, NULL);
-    assert( pj_timer_heap_create(pool, 100, &timerHeap) == PJ_SUCCESS );
-
-    /* Create the endpoint: */
-    status = pjmedia_endpt_create(&cachingPool.factory, NULL, 1, &mediaEndpoint);
-
-    //pj_bool_t telephony = false;
-    //pjmedia_endpt_set_flag(mediaEndpoint, PJMEDIA_ENDPT_HAS_TELEPHONE_EVENT_FLAG, &telephony);
-
-    assert(status == PJ_SUCCESS);
-    status = pjmedia_codec_g711_init(mediaEndpoint);
-    assert(status == PJ_SUCCESS);
-    status = pjmedia_codec_g722_init(mediaEndpoint);
-    assert(status == PJ_SUCCESS);
-    status = pjmedia_codec_ilbc_init(mediaEndpoint, 30);
-    assert(status == PJ_SUCCESS);
-//    status = pjmedia_codec_opus_init(mediaEndpoint);
-//    assert(status == PJ_SUCCESS);
 
     mediaTransportsIceInitializedCount = 0;
     mediaTransportsDtlsInitializedCount = 0;
-
-    pj_ioqueue_create(pool, 16, &ioqueue);
 
     pj_ice_strans_cfg_default(&iceTransportConfiguration);
     auto & cfg = iceTransportConfiguration;
@@ -215,7 +195,7 @@ namespace webrtc {
 
   std::shared_ptr<promise::Promise<nlohmann::json>> PeerConnection::createOffer() {
     printf("CREATE OFFER?!");
-    if(mediaTransport.size() == 0) throw "zrob tu errora";
+    if(mediaTransport.size() == 0) throw "error";
     return iceCompletePromise->then<nlohmann::json>([this](bool& v) {
       startTransportIfPossible();
       return promise::Promise<nlohmann::json>::resolved(doCreateOffer());
@@ -223,11 +203,12 @@ namespace webrtc {
   }
 
   std::shared_ptr<promise::Promise<nlohmann::json>> PeerConnection::createAnswer() {
-    if(mediaTransport.size() == 0) throw "zrob tu errora";
-    return iceCompletePromise->then<nlohmann::json>([this](bool& v) {
-      return remoteIceCompletePromise->then<nlohmann::json>([this](bool& v) {
-        startTransportIfPossible();
-        return promise::Promise<nlohmann::json>::resolved(doCreateAnswer(this->remoteDescription));
+    if(mediaTransport.size() == 0) throw "error";
+    PeerConnection* pc = this;
+    return pc->iceCompletePromise->then<nlohmann::json>([this, pc](bool& v) {
+      return pc->remoteIceCompletePromise->then<nlohmann::json>([this, pc](bool& v) {
+        pc->startTransportIfPossible();
+        return promise::Promise<nlohmann::json>::resolved(pc->doCreateAnswer(this->remoteDescription));
       });
     });
   }
@@ -492,8 +473,6 @@ namespace webrtc {
 
     printf("LOCAL AND REMOTE SDP PARSED!\n");
 
-    mediaStreams.resize(mediaTransport.size());
-
     for(int i = 0; i < mediaTransport.size(); i++) {
       auto transport = mediaTransport[i].srtp;
       status = pjmedia_transport_media_start(transport, pool, localSdp, remoteSdp, i);
@@ -509,8 +488,9 @@ namespace webrtc {
   }
 
   void PeerConnection::startMedia() {
-
     printf("START MEDIA!!!\n");
+    mediaStreams.resize(mediaTransport.size());
+
     for(int i = 0; i < mediaTransport.size(); i++) {
       pj_status_t status;
 
@@ -752,10 +732,12 @@ namespace webrtc {
     printf("STOP MEDIA!!!\n");
     for(int i = 0; i < mediaTransport.size(); i++) {
       pj_status_t status;
-      pjmedia_stream_destroy(mediaStreams[i].stream);
-      pjmedia_snd_port_disconnect(mediaStreams[i].soundPort);
-      pjmedia_port_destroy(mediaStreams[i].mediaPort);
-      pjmedia_snd_port_destroy(mediaStreams[i].soundPort);
+      if(mediaStreams.size() > i) {
+        pjmedia_stream_destroy(mediaStreams[i].stream);
+        pjmedia_snd_port_disconnect(mediaStreams[i].soundPort);
+        pjmedia_port_destroy(mediaStreams[i].mediaPort);
+        pjmedia_snd_port_destroy(mediaStreams[i].soundPort);
+      }
 
       pjmedia_transport_close(mediaTransport[i].srtp);
     }
@@ -771,9 +753,7 @@ namespace webrtc {
 
   PeerConnection::~PeerConnection() {
     if(!closed) handleDisconnect();
-    pj_timer_heap_destroy(timerHeap);
-    pj_ioqueue_destroy(ioqueue);
-    pjmedia_endpt_destroy2(mediaEndpoint);
+
     pj_pool_release(pool);
   }
 

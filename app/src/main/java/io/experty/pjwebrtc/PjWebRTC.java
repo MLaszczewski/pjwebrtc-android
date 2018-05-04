@@ -50,12 +50,14 @@ public class PjWebRTC {
               int id = msg.getInt("responseId");
               waitingRequests.get(id).onResult(msg);
               waitingRequests.remove(id);
-            } else if(msg.has("peerConnectionId")){
+            } else if(msg.has("peerConnectionId")) {
               int id = msg.getInt("peerConnectionId");
-              peerConnection.get(id).handleMessage(msg);
-            } else if(msg.has("userMediaId")){
+              PeerConnection pc = peerConnection.get(id);
+              if(pc != null) pc.handleMessage(msg);
+            } else if(msg.has("userMediaId")) {
               int id = msg.getInt("userMediaId");
-              userMedia.get(id).handleMessage(msg);
+              UserMedia um = userMedia.get(id);
+              if(um != null) um.handleMessage(msg);
             }
           } catch (JSONException e) {
             e.printStackTrace();

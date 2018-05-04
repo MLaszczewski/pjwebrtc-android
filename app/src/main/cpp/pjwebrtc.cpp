@@ -17,6 +17,12 @@
 static int pfd[2];
 static pthread_t loggingThread;
 
+void registerThisThread(const char* name) {
+  pj_thread_t* wsThread = nullptr;
+  pj_thread_desc wsThreadDesc;
+  if(!pj_thread_is_registered()) pj_thread_register(name, wsThreadDesc, &wsThread);
+}
+
 static void *loggingFunction(void*) {
   ssize_t readSize;
   char buf[128];
@@ -33,7 +39,6 @@ static void *loggingFunction(void*) {
 
   return 0;
 }
-
 static int runLoggingThread() { // run this function to redirect your output to android log
   setvbuf(stdout, 0, _IOLBF, 0); // make stdout line-buffered
   setvbuf(stderr, 0, _IONBF, 0); // make stderr unbuffered
@@ -53,16 +58,47 @@ static int runLoggingThread() { // run this function to redirect your output to 
   return 0;
 }
 
-moodycamel::ConcurrentQueue<std::string> messages;
-std::shared_ptr<webrtc::PeerConnection> peerConnection;
 
-std::shared_ptr<webrtc::UserMedia> userMedia;
+static pthread_t pollingThread;
+static pthread_t timerThread;
 
-void registerThisThread(const char* name) {
-  pj_thread_t* wsThread = nullptr;
-  pj_thread_desc wsThreadDesc;
-  if(!pj_thread_is_registered()) pj_thread_register(name, wsThreadDesc, &wsThread);
+static void* pollingFunction(void*) {
+  registerThisThread("ioqueue_poll");
+  while(true) {
+    const pj_time_val delay = {.sec = 0, .msec = 10};
+    pj_ioqueue_poll(webrtc::ioqueue, &delay);
+  }
+  return 0;
 }
+static void* timerFunction(void*) {
+  registerThisThread("timer_poll");
+  while(true) {
+    pj_timer_heap_poll(webrtc::timerHeap, nullptr);
+    std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+  }
+  return 0;
+}
+static int runPollingThreads() {
+  if(pthread_create(&pollingThread, 0, pollingFunction, 0) == -1) {
+    return -1;
+  }
+  pthread_detach(pollingThread);
+
+  if(pthread_create(&timerThread, 0, timerFunction, 0) == -1) {
+    return -1;
+  }
+  pthread_detach(timerThread);
+
+  return 0;
+}
+
+moodycamel::ConcurrentQueue<std::string> messages;
+
+std::map<int, std::shared_ptr<webrtc::PeerConnection>> peerConnections;
+int lastPeerConnectionId = 0;
+
+std::map<int, std::shared_ptr<webrtc::UserMedia>> userMedias;
+int lastUserMediaId = 0;
 
 extern "C"
 JNIEXPORT void JNICALL
@@ -70,6 +106,7 @@ Java_io_experty_pjwebrtc_PjWebRTC_init(JNIEnv *env, jclass type) {
   webrtc::init();
   registerThisThread("jni_init");
   runLoggingThread();
+  runPollingThreads();
 }
 
 extern "C"
@@ -86,64 +123,122 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
   if(messageType == "getUserMedia") {
     webrtc::UserMediaConstraints constraints;
     /// TODO: read constraints
-    userMedia = webrtc::UserMedia::getUserMedia(constraints);
-    nlohmann::json msg = { {"type", "gotUserMedia"}, {"userMediaId", 0},
+    int id = ++lastUserMediaId;
+    userMedias[id] = webrtc::UserMedia::getUserMedia(constraints);
+    nlohmann::json msg = { {"type", "gotUserMedia"}, {"userMediaId", id},
                            {"responseId", message["requestId"]} };
     messages.enqueue(msg.dump(2));
   } else
-  if(messageType == "createPeerConnection") {
+  if(messageType == "createPeerConnection") {;
+    int id = ++lastPeerConnectionId;
     webrtc::PeerConnectionConfiguration pcConfig;
     pcConfig.iceServers = message["config"]["iceServers"];
-    peerConnection = std::make_shared<webrtc::PeerConnection>();
+    auto peerConnection = std::make_shared<webrtc::PeerConnection>();
+
+    peerConnection->onConnectionStateChange = [id](std::string state){
+      nlohmann::json msg = { {"type", "connectionStateChange"}, {"peerConnectionId", id},
+                             {"connectionState", state} };
+      messages.enqueue(msg.dump(2));
+    };
+    peerConnection->onIceConnectionStateChange = [id](std::string state){
+      nlohmann::json msg = { {"type", "iceConnectionStateChange"}, {"peerConnectionId", id},
+                             {"iceConnectionState", state} };
+      messages.enqueue(msg.dump(2));
+    };
+    peerConnection->onIceGatheringStateChange = [id](std::string state){
+      nlohmann::json msg = { {"type", "iceGatheringStateChange"}, {"peerConnectionId", id},
+                             {"iceGatheringState", state} };
+      messages.enqueue(msg.dump(2));
+    };
+    peerConnection->onSignalingStateChange = [id](std::string state) {
+      nlohmann::json msg = { {"type", "signalingStateChange"}, {"peerConnectionId", id},
+                             {"signalingState", state} };
+      messages.enqueue(msg.dump(2));
+    };
+
     peerConnection->init(pcConfig);
-    nlohmann::json msg = { {"type", "createdPeerConnection"}, {"peerConnectionId", 0},
+
+    peerConnections[id] = peerConnection;
+    nlohmann::json msg = { {"type", "createdPeerConnection"}, {"peerConnectionId", id},
                            {"responseId", message["requestId"]} };
     messages.enqueue(msg.dump(2));
   } else
   if(messageType == "addStream") {
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
+    auto userMedia = userMedias[message["userMediaId"]];
     peerConnection->addStream(userMedia);
-    nlohmann::json msg = { {"type", "streamAdded"}, {"peerConnectionId", 0},
+    nlohmann::json msg = { {"type", "streamAdded"}, {"peerConnectionId", peerConnectionId},
                            {"responseId", message["requestId"]} };
     messages.enqueue(msg.dump(2));
   } else
   if(messageType == "setLocalDescription") {
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
     peerConnection->setLocalDescription(message["sdp"]);
-    nlohmann::json msg = { {"type", "localDescriptionSet"}, {"peerConnectionId", 0},
+    nlohmann::json msg = { {"type", "localDescriptionSet"}, {"peerConnectionId", peerConnectionId},
                            {"responseId", message["requestId"]} };
     messages.enqueue(msg.dump(2));
-    for (auto &candidate : peerConnection->localCandidates) {
-      nlohmann::json msg = { {"type", "iceCandidate"}, {"candidate", candidate},
-                             {"peerConnectionId", 0} };
+    peerConnection->iceCompletePromise->onResolved([peerConnection, peerConnectionId](bool& v) {
+      printf("ICE GATHERING COMPLETE! - OUTPUTING CANDIDATES!\n");
+      for (auto &candidate : peerConnection->localCandidates) {
+        nlohmann::json msg = {{"type",             "iceCandidate"},
+                              {"candidate",        candidate},
+                              {"peerConnectionId", peerConnectionId}};
+        messages.enqueue(msg.dump(2));
+      }
+      nlohmann::json msg = {{"type",             "iceCandidate"},
+                            {"candidate",        nullptr},
+                            {"peerConnectionId", peerConnectionId}};
       messages.enqueue(msg.dump(2));
-    }
+    });
   } else
   if(messageType == "setRemoteDescription") {
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
     peerConnection->setRemoteDescription(message["sdp"]);
-    nlohmann::json msg = { {"type", "remoteDescriptionSet"}, {"peerConnectionId", 0},
+    nlohmann::json msg = { {"type", "remoteDescriptionSet"}, {"peerConnectionId", peerConnectionId},
                            {"responseId", message["requestId"]} };
     messages.enqueue(msg.dump(2));
   } else
   if(messageType == "createOffer") {
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
     peerConnection->createOffer()->onResolved([=](nlohmann::json offer) {
-      nlohmann::json msg = { {"type", "createdOffer"}, {"sdp", offer}, {"peerConnectionId", 0},
+      nlohmann::json msg = { {"type", "createdOffer"}, {"sdp", offer},
+                             {"peerConnectionId", peerConnectionId},
                              {"responseId", message["requestId"]} };
       messages.enqueue(msg.dump(2));
     });
   } else
   if(messageType == "createAnswer") {
     printf("CREATE ANSWER!!!!!!\n");
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
     peerConnection->createAnswer()->onResolved([=](nlohmann::json answer) {
-      nlohmann::json msg = { {"type", "createdAnswer"}, {"sdp", answer}, {"peerConnectionId", 0},
+      nlohmann::json msg = { {"type", "createdAnswer"}, {"sdp", answer},
+                             {"peerConnectionId", peerConnectionId},
                              {"responseId", message["requestId"]} };
       messages.enqueue(msg.dump(2));
     });
-  } else {
-    if(messageType == "addIceCandidate") {
-      peerConnection->addIceCandidate(message["ice"]);
-      nlohmann::json msg = { {"type", "iceCandidateAdded"}, {"peerConnectionId", 0},
-                             {"responseId", message["requestId"]} };
-      messages.enqueue(msg.dump(2));
-    }
+  } else if(messageType == "addIceCandidate") {
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
+    peerConnection->addIceCandidate(message["ice"]);
+    nlohmann::json msg = { {"type", "iceCandidateAdded"},
+                           {"peerConnectionId", peerConnectionId},
+                           {"responseId", message["requestId"]} };
+    messages.enqueue(msg.dump(2));
+  } else if(messageType == "close") {
+    int peerConnectionId = message["peerConnectionId"];
+    auto peerConnection = peerConnections[peerConnectionId];
+    peerConnection->close();
+    nlohmann::json msg = { {"type", "closed"}, {"peerConnectionId", peerConnectionId},
+                           {"responseId", message["requestId"]} };
+    messages.enqueue(msg.dump(2));
+  } else if(messageType == "delete") {
+    int peerConnectionId = message["peerConnectionId"];
+    peerConnections.erase(peerConnectionId);
   }
 
   env->ReleaseStringUTFChars(json_, json);
@@ -162,13 +257,7 @@ Java_io_experty_pjwebrtc_PjWebRTC_getNextMessage(JNIEnv *env, jobject instance, 
     if(messages.try_dequeue(message)) {
       return env->NewStringUTF(message.c_str());
     }
-    if(peerConnection) {
-      const pj_time_val delay = {0, 10};
-      pj_timer_heap_poll(peerConnection->timerHeap, nullptr);
-      pj_ioqueue_poll(peerConnection->ioqueue, &delay);
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
     long now = std::chrono::duration_cast< std::chrono::milliseconds >(
         std::chrono::system_clock::now().time_since_epoch()
     ).count();

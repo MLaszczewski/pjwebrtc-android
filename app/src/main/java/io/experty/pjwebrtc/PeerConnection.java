@@ -13,7 +13,16 @@ public class PeerConnection {
 
   private final int instanceId;
 
-  public ResultCallback<JSONObject> onIceCandidate;
+  public ResultCallback<Object> onIceCandidate;
+
+  public String connectionState = "new";
+  public ResultCallback<String> onConnectionStateChange;
+  public String iceConnectionState = "new";
+  public ResultCallback<String> onIceConnectionStateChange;
+  public String iceGatheringState = "new";
+  public ResultCallback<String> onIceGatheringStateChange;
+  public String signalingState = "stable";
+  public ResultCallback<String> onSignalingStateChange;
 
   PeerConnection(int instanceId) {
     this.instanceId = instanceId;
@@ -130,11 +139,54 @@ public class PeerConnection {
     try {
       String messageType = message.getString("type");
       if(messageType.equals("iceCandidate")) {
-        onIceCandidate.onResult(message.getJSONObject("candidate"));
+        if(onIceCandidate != null) onIceCandidate.onResult(message.get("candidate"));
+      } else if(messageType.equals("connectionState")) {
+        if(onConnectionStateChange != null)
+          onConnectionStateChange.onResult(message.getString("connectionState"));
+      } else if(messageType.equals("iceConnectionState")) {
+        if(onIceConnectionStateChange != null)
+          onIceConnectionStateChange.onResult(message.getString("iceConnectionState"));
+      } else if(messageType.equals("iceGatheringState")) {
+        if(onIceGatheringStateChange != null)
+          onIceGatheringStateChange.onResult(message.getString("iceGatheringState"));
+      } else if(messageType.equals("signalingState")) {
+        if(onSignalingStateChange != null)
+          onSignalingStateChange.onResult(message.getString("signalingState"));
       }
     } catch (JSONException e) {
       e.printStackTrace();
     }
-
   }
+
+  public void close(final ResultCallback<JSONObject> closeCb) {
+    try {
+      JSONObject req = new JSONObject();
+      req.put("type", "close");
+      req.put("peerConnectionId", instanceId);
+      PjWebRTC.request(req, new ResultCallback<JSONObject>() {
+        @Override
+        public void onResult(JSONObject result) {
+          closeCb.onResult(result);
+        }
+      });
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+  }
+
+  @Override
+  public void finalize() {
+    try {
+      JSONObject req = new JSONObject();
+      req.put("type", "delete");
+      req.put("peerConnectionId", instanceId);
+      PjWebRTC.request(req, new ResultCallback<JSONObject>() {
+        @Override
+        public void onResult(JSONObject result) { }
+      });
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+  }
+
 }
