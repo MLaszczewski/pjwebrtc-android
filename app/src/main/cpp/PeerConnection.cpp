@@ -532,7 +532,8 @@ namespace webrtc {
       status = pjmedia_stream_get_port(stream.stream, &stream.mediaPort);
       assert(status == PJ_SUCCESS);
 
-      pjmedia_snd_port_create(pool, /*PJMEDIA_AUD_DEFAULT_CAPTURE_DEV, PJMEDIA_AUD_DEFAULT_PLAYBACK_DEV,*/ 1, 0,
+      printf("CREATING MEDIA PORT!\n");
+      pjmedia_snd_port_create(pool, PJMEDIA_AUD_DEFAULT_CAPTURE_DEV, PJMEDIA_AUD_DEFAULT_PLAYBACK_DEV,// 1, 0,
                               PJMEDIA_PIA_SRATE(&stream.mediaPort->info), /* clock rate */
                               PJMEDIA_PIA_CCNT(&stream.mediaPort->info), /* channel count */
                               PJMEDIA_PIA_SPF(&stream.mediaPort->info), /* samples per frame*/
@@ -543,13 +544,14 @@ namespace webrtc {
       status = pjmedia_snd_port_connect(stream.soundPort, stream.mediaPort);
       assert(status == PJ_SUCCESS);
 
+      printf("CONNECTED!\n");
       connectionState = "connected";
       if(onConnectionStateChange) onConnectionStateChange(connectionState);
 
       //pjmedia_transport_simulate_lost(mediaTransport[i].mux, PJMEDIA_DIR_ENCODING_DECODING, 20);
 
     }
-    scheduleReadStats(2, 0);
+    scheduleReadStats(5, 0);
   }
 
   static const char *good_number(char *buf, pj_int32_t val)
@@ -572,6 +574,8 @@ namespace webrtc {
   void PeerConnection::readStats() {
     char duration[80], last_update[80];
     char bps[16], ipbps[16], packets[16], bytes[16], ipbytes[16];
+
+    if(closed) return;
 
     printf("READ STREAM STATS(%zd)!\n", mediaStreams.size());
 
@@ -703,6 +707,7 @@ namespace webrtc {
       pjmedia_stream_get_rtp_session_info(mediaStreams[i].stream, &rtp_info);
       unsigned int rtpTs = rtp_info.rtcp->rtp_last_ts;
       if(rtpTs == lastRtpTs) {
+        printf("CLOSING BECAUSE POOR NETWORK CONDITIONS!\n");
         return handleDisconnect();
       }
       lastRtpTs = rtpTs;
@@ -730,25 +735,27 @@ namespace webrtc {
 
   void PeerConnection::handleDisconnect() {
     printf("STOP MEDIA!!!\n");
+    if(closed) return;
+    closed = true;
     for(int i = 0; i < mediaTransport.size(); i++) {
       pj_status_t status;
       if(mediaStreams.size() > i) {
-        pjmedia_stream_destroy(mediaStreams[i].stream);
         pjmedia_snd_port_disconnect(mediaStreams[i].soundPort);
+        pjmedia_stream_destroy(mediaStreams[i].stream);
         pjmedia_port_destroy(mediaStreams[i].mediaPort);
         pjmedia_snd_port_destroy(mediaStreams[i].soundPort);
       }
 
       pjmedia_transport_close(mediaTransport[i].srtp);
     }
-    closed = true;
-  }
-
-  void PeerConnection::close() {
     connectionState = "closed";
     if(onConnectionStateChange) onConnectionStateChange(connectionState);
     iceConnectionState = "closed";
     if(onIceConnectionStateChange) onIceConnectionStateChange(iceConnectionState);
+  }
+
+  void PeerConnection::close() {
+    handleDisconnect();
   }
 
   PeerConnection::~PeerConnection() {

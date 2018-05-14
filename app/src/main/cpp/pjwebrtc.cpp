@@ -239,7 +239,7 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
   } else if(messageType == "delete") {
     int peerConnectionId = message["peerConnectionId"];
     peerConnections.erase(peerConnectionId);
-  }
+  } else throw "unknown method";
 
   env->ReleaseStringUTFChars(json_, json);
 }

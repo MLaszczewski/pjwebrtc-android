@@ -137,19 +137,20 @@ public class PeerConnection {
 
   public void handleMessage(JSONObject message) {
     try {
+      Log.d("PC", "got message "+message);
       String messageType = message.getString("type");
       if(messageType.equals("iceCandidate")) {
         if(onIceCandidate != null) onIceCandidate.onResult(message.get("candidate"));
-      } else if(messageType.equals("connectionState")) {
+      } else if(messageType.equals("connectionStateChange")) {
         if(onConnectionStateChange != null)
           onConnectionStateChange.onResult(message.getString("connectionState"));
-      } else if(messageType.equals("iceConnectionState")) {
+      } else if(messageType.equals("iceConnectionStateChange")) {
         if(onIceConnectionStateChange != null)
           onIceConnectionStateChange.onResult(message.getString("iceConnectionState"));
-      } else if(messageType.equals("iceGatheringState")) {
+      } else if(messageType.equals("iceGatheringStateChange")) {
         if(onIceGatheringStateChange != null)
           onIceGatheringStateChange.onResult(message.getString("iceGatheringState"));
-      } else if(messageType.equals("signalingState")) {
+      } else if(messageType.equals("signalingStateChange")) {
         if(onSignalingStateChange != null)
           onSignalingStateChange.onResult(message.getString("signalingState"));
       }

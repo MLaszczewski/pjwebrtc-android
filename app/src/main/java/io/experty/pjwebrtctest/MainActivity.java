@@ -36,18 +36,26 @@ public class MainActivity extends AppCompatActivity{
   public Button joinButton;
   public EditText roomName;
 
-  public OkHttpClient httpClient;
   public ReactiveConnection connection;
-
-  public boolean iAmCaller;
 
   public static final String clientUUID = UUID.randomUUID().toString();
 
-  public volatile boolean locked;
+  public Observer amICallingObserver;
+  public Observer myIpObserver;
+  public Observer otherUserIceObserver;
+  public Observer otherUserSdpObserver;
+  public boolean calling;
+  public boolean callingReceived = false;
+  public String myIP = "";
+  public Object localDescription = JSONObject.NULL;
+  public boolean inRoom;
 
   public void resetPC() {
     if(peerConnection != null) {
       peerConnection.onConnectionStateChange = null;
+      peerConnection.onIceGatheringStateChange = null;
+      peerConnection.onIceConnectionStateChange = null;
+      peerConnection.onIceCandidate = null;
       peerConnection.close(new ResultCallback<JSONObject>() {
         @Override
         public void onResult(JSONObject result) {
@@ -78,6 +86,28 @@ public class MainActivity extends AppCompatActivity{
             handleIceCandidate(result);
           }
         };
+        peerConnection.onIceGatheringStateChange = new ResultCallback<String>() {
+          @Override
+          public void onResult(final String result) {
+            runOnUiThread(new Runnable() {
+              @Override
+              public void run() {
+                statusText.setText("ICE Gathering state: " + result);
+              }
+            });
+          }
+        };
+        peerConnection.onIceConnectionStateChange = new ResultCallback<String>() {
+          @Override
+          public void onResult(final String result) {
+            runOnUiThread(new Runnable() {
+              @Override
+              public void run() {
+                statusText.setText("ICE Connection state: " + result);
+              }
+            });
+          }
+        };
         peerConnection.onConnectionStateChange = new ResultCallback<String>() {
           @Override
           public void onResult(final String result) {
@@ -96,12 +126,17 @@ public class MainActivity extends AppCompatActivity{
 
   public void closePC() {
     peerConnection.onConnectionStateChange = null;
+    peerConnection.onIceGatheringStateChange = null;
+    peerConnection.onIceConnectionStateChange = null;
+    peerConnection.onIceCandidate = null;
     peerConnection.close(new ResultCallback<JSONObject>() {
       @Override
       public void onResult(JSONObject result) {
         peerConnection = null;
       }
     });
+    calling = false;
+    localDescription = JSONObject.NULL;
   }
 
   public void sendOffer() {
@@ -170,15 +205,6 @@ public class MainActivity extends AppCompatActivity{
     }
   }
 
-  public Observer amICallingObserver;
-  public Observer myIpObserver;
-  public Observer otherUserIceObserver;
-  public Observer otherUserSdpObserver;
-  public boolean calling;
-  public boolean callingReceived = false;
-  public String myIP = "";
-  public Object localDescription = JSONObject.NULL;
-  public boolean inRoom;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -318,6 +344,7 @@ public class MainActivity extends AppCompatActivity{
             connection.observableValue(new JSONArray("[\"room\", \"myIp\", \"" + rn + "\"]")).removeObserver(myIpObserver);
             connection.observableList(new JSONArray("[\"room\", \"otherUserIce\", \"" + rn + "\"]")).removeObserver(otherUserIceObserver);
             connection.observableValue(new JSONArray("[\"room\", \"otherUserSdp\", \"" + rn + "\"]")).removeObserver(otherUserSdpObserver);
+            closePC();
           } catch (JSONException e) {
             e.printStackTrace();
           }
