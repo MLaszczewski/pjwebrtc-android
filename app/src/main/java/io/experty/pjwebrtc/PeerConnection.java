@@ -9,7 +9,7 @@ import org.json.JSONObject;
  * Created by m8 on 09/04/2018.
  */
 
-public class PeerConnection {
+public class  PeerConnection {
 
   private final int instanceId;
 

@@ -7,7 +7,7 @@ add_definitions(-D__ANDROID)
 message("ANDROID ABI: ${ANDROID_ABI}")
 set(ABI ${ANDROID_ABI})
 
-set(PJ_DIR "/Users/m8/sip/android/pjproject-${ABI}")
+set(PJ_DIR "/home/m8/sip/android/pjproject-${ABI}")
 
 include_directories(
     ${PJ_DIR}/pjlib/include
@@ -44,7 +44,7 @@ set(PJ_LIBS
     "${PJ_DIR}/pjlib/lib/libpj-${PJ_LIB_SUFIX}"
 )
 
-set(OPENSSL_DIR "/Users/m8/sip/android/openssl_for_ios_and_android/output/android/openssl-${ABI}/")
+set(OPENSSL_DIR "/home/m8/sip/android/openssl_for_ios_and_android/output/android/openssl-${ABI}/")
 
 set(OPENSSL_LIBS
     "${OPENSSL_DIR}/lib/libssl.a"

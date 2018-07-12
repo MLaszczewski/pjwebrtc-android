@@ -156,6 +156,11 @@ Java_io_experty_pjwebrtc_PjWebRTC_pushMessage(JNIEnv *env, jobject instance, jst
       messages.enqueue(msg.dump(2));
     };
 
+    peerConnection->onAddStream = [id]() {
+      nlohmann::json msg = { {"type", "addStream"}, {"peerConnectionId", id} };
+      messages.enqueue(msg.dump(2));
+    };
+
     peerConnection->init(pcConfig);
 
     peerConnections[id] = peerConnection;

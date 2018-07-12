@@ -120,12 +120,19 @@ namespace webrtc {
       auto credi = iceServer.find("credential");
       if(unamei != iceServer.end()) uname = *unamei;
       if(credi != iceServer.end()) cred = *credi;
-      if(iceServer["urls"].is_array()) {
-        for(std::string url : iceServer["urls"]) {
+      auto urli = iceServer.find("url");
+      auto urlsi = iceServer.find("urls");
+      if(urlsi != iceServer.end()) {
+        if (iceServer["urls"].is_array()) {
+          for (std::string url : iceServer["urls"]) {
+            addIceServer(url, uname, cred);
+          }
+        } else {
+          std::string url = iceServer["urls"];
           addIceServer(url, uname, cred);
         }
-      } else {
-        std::string url = iceServer["urls"];
+      } else if(urli != iceServer.end()) {
+        std::string url = iceServer["url"];
         addIceServer(url, uname, cred);
       }
     }
@@ -547,6 +554,8 @@ namespace webrtc {
       printf("CONNECTED!\n");
       connectionState = "connected";
       if(onConnectionStateChange) onConnectionStateChange(connectionState);
+
+      if(onAddStream) onAddStream();
 
       //pjmedia_transport_simulate_lost(mediaTransport[i].mux, PJMEDIA_DIR_ENCODING_DECODING, 20);
 

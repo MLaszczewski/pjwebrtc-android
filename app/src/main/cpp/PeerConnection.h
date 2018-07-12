@@ -95,6 +95,8 @@ namespace webrtc {
     std::string signalingState;
     std::function<void(std::string)> onSignalingStateChange;
 
+    std::function<void()> onAddStream;
+
 
     std::vector<nlohmann::json> localCandidates;
 
