@@ -554,6 +554,8 @@ namespace webrtc {
       printf("CONNECTED!\n");
       connectionState = "connected";
       if(onConnectionStateChange) onConnectionStateChange(connectionState);
+      iceConnectionState = "connected";
+      if(onIceConnectionStateChange) onIceConnectionStateChange(iceConnectionState);
 
       if(onAddStream) onAddStream();
 
