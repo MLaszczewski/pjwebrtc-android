@@ -8,8 +8,11 @@
 namespace webrtc {
 
   void onIceComplete(pjmedia_transport *tp, pj_ice_strans_op op, pj_status_t status){
-    assert(status == PJ_SUCCESS);
     PeerConnection* pc = (PeerConnection*)tp->user_data;
+    if(status != PJ_SUCCESS) {
+      pc->handleIceTransportFailed(tp);
+      return;
+    }
     pc->handleIceTransportComplete(tp);
   }
 
@@ -166,8 +169,17 @@ namespace webrtc {
       auto& transport = mediaTransport[mediaTransport.size()-1];
       status = pjmedia_ice_create3(mediaEndpoint, NULL, 1, &iceTransportConfiguration, &iceCallbacks,
           PJMEDIA_ICE_RTCP_MUX, (void*)this, &transport.ice);
-      assert(status == PJ_SUCCESS);
-
+      if(status != PJ_SUCCESS) {
+        iceGatheringState = "complete";
+        if(onIceGatheringStateChange) onIceGatheringStateChange(iceGatheringState);
+        iceConnectionState = "failed";
+        if(onIceConnectionStateChange) onIceConnectionStateChange(iceConnectionState);
+        connectionState = "failed";
+        if(onConnectionStateChange) onConnectionStateChange(connectionState);
+        //iceCompletePromise->reject(std::make_exception_ptr(std::logic_error("ice failed")));
+        iceCompletePromise->resolve(false); // rejection fails with sigabrt TODO: repair promises
+        return iceCompletePromise;
+      }
 
      /* status = pjmedia_transport_mux_create(mediaEndpoint, transport.ice, &transport.mux);
       assert(status == PJ_SUCCESS);*/
@@ -203,7 +215,8 @@ namespace webrtc {
   std::shared_ptr<promise::Promise<nlohmann::json>> PeerConnection::createOffer() {
     printf("CREATE OFFER?!");
     if(mediaTransport.size() == 0) throw "error";
-    return iceCompletePromise->then<nlohmann::json>([this](bool& v) {
+    return iceCompletePromise->then<nlohmann::json>([this](bool& ok) {
+      if(!ok) promise::Promise<nlohmann::json>::resolved(nullptr);
       startTransportIfPossible();
       return promise::Promise<nlohmann::json>::resolved(doCreateOffer());
     });
@@ -212,7 +225,8 @@ namespace webrtc {
   std::shared_ptr<promise::Promise<nlohmann::json>> PeerConnection::createAnswer() {
     if(mediaTransport.size() == 0) throw "error";
     PeerConnection* pc = this;
-    return pc->iceCompletePromise->then<nlohmann::json>([this, pc](bool& v) {
+    return pc->iceCompletePromise->then<nlohmann::json>([this, pc](bool& ok) {
+      if(!ok) promise::Promise<nlohmann::json>::resolved(nullptr);
       return pc->remoteIceCompletePromise->then<nlohmann::json>([this, pc](bool& v) {
         pc->startTransportIfPossible();
         return promise::Promise<nlohmann::json>::resolved(pc->doCreateAnswer(this->remoteDescription));
@@ -773,6 +787,14 @@ namespace webrtc {
     if(!closed) handleDisconnect();
 
     pj_pool_release(pool);
+  }
+
+  void PeerConnection::handleIceTransportFailed(pjmedia_transport *pTransport) {
+    printf("ICE TRANSPORT FAILED!!!\n");
+    iceConnectionState = "failed";
+    if(onIceConnectionStateChange) onIceConnectionStateChange(iceConnectionState);
+    connectionState = "failed";
+    if(onConnectionStateChange) onConnectionStateChange(connectionState);
   }
 
 

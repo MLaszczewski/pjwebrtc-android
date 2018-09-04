@@ -123,6 +123,8 @@ namespace webrtc {
    /// callbacks:
     void handleIceTransportComplete(pjmedia_transport *pTransport);
     void handleDtlsTransportComplete(pjmedia_transport *pTransport);
+
+    void handleIceTransportFailed(pjmedia_transport *pTransport);
   };
 
 }
